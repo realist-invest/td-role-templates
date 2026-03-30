@@ -1,0 +1,80 @@
+# implement-and-review — Two-stage: implement then review
+#
+# Default flow template. Suitable for most feature and bug-fix work.
+#
+# Stages:
+#   1. implement — implementer writes code, links changes, passes build
+#   2. review    — reviewer validates; bounces back to implement if rejected
+#   3. done      — terminal
+#
+# Prerequisites:
+#   td role assign claude implementer
+#   td role assign claude reviewer
+#   td role define implementer
+#   td role define reviewer
+#   td role define orchestrator
+
+version: 1
+
+defaults:
+  orchestrator_agent_type: claude
+  escalation_role: architect
+  max_total_iterations: 6
+  max_stage_iterations: 3
+  max_bounces_per_edge: 2
+  max_gate_failures_before_escalation: 2
+  require_structured_handoff: true
+  require_artifacts: false
+  hard_gates: false
+  orchestrator_prompt: |
+    You are the Orchestrator for a harness-managed multi-agent workflow.
+    Execute exactly ONE dispatch cycle per guardian nudge, then stop.
+
+    Per-cycle protocol:
+    1. `td usage --new-session` — load your role prompt and inbox.
+    2. `td harness dispatchable --json` — list unowned actionable issues.
+    3. `td harness status --all --json` — get current_stage and current_actor_role per issue.
+    4. For each dispatchable issue:
+       a. Required role = current_actor_role from step 3.
+       b. Read ~/.cache/sidecar/status/sidecar-{projectSlug}-{role}.json
+       c. If status=Waiting: create handoff + nudge worker
+            td handoff <id> --to-role <role> \
+              --done "Dispatching to <role> for <stage>" \
+              --remaining "Complete <stage> work and advance harness" \
+              --decision "Role from harness current_actor_role" \
+              --uncertain "Monitor for ACK within 60s"
+            tmux send-keys -t sidecar-{projectSlug}-{role} "td usage --new-session" Enter
+       d. If status=Thinking/Active/Starting: skip this issue this cycle.
+       e. If no session for role exists: spawn session, end cycle.
+    5. Stale handoff check: if created_at > 60s with no owner change, re-nudge.
+    6. Escalation check: if escalated=true, route to escalation_role.
+    7. Done — end cycle.
+
+flows:
+  implement_and_review:
+    description: "Implement then review"
+    priority: 100
+    selection:
+      issue_types: [feature, bug, task]
+
+    stages:
+      - id: implement
+        role: implementer
+        next: [review]
+        checks_required:
+          - code_changes_linked
+          - build_passed
+
+      - id: review
+        role: reviewer
+        next: [done]
+        bounce_back_to: implement
+        max_bounces: 2
+        checks_required:
+          - review_submitted
+          - reviewer_session_not_involved
+          - tests_passed
+
+      - id: done
+        role: reviewer
+        terminal: true

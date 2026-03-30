@@ -32,3 +32,13 @@ roles:
     versions:
       v1: { summary: "Per-cycle dispatch loop; role-to-session routing via routed handoffs" }
 
+flows:
+  implement-and-review:
+    description: "Two-stage: implement then review"
+    default: true
+  implement-review-test:
+    description: "Three-stage: implement, review, test"
+  solo-implement:
+    description: "Single implementer, no review"
+  epic-development:
+    description: "Epic development workflow"

@@ -1,0 +1,268 @@
+# harness.flows.example.yaml — Epic Development Workflow
+#
+# Copy this file to .todos/harness.flows.yaml in your project.
+#
+# This example defines TWO flows:
+#   1. `epic_development` — planning, issue breakdown, execution tracking, documentation
+#   2. `epic_work_item_execution` — implementation/review/testing loop for child work items
+#
+# Lifecycle:
+#   1. Epic planning: PRD + domain architecture (architect)
+#   2. Architecture iteration: critic challenges, bounces until approved
+#   3. Implementation plan: staged plan creation (architect)
+#   4. Plan iteration: critic challenges, bounces until approved
+#   5. Issue breakdown: reflect approved plan into TD child issues (architect)
+#   6. Execution tracking: monitor child issue completion at epic level (architect)
+#   7. Child issues execute implementation/review/testing in their own flow
+#   8. Documentation: align architecture to reality, write guidelines, update repo docs (architect)
+#
+# Prerequisites (run once per project):
+#   td role assign claude     architect
+#   td role assign claude     critic
+#   td role assign codex      implementer
+#   td role assign claude     reviewer
+#   td role assign claude     tester
+#   td role define architect
+#   td role define critic
+#   td role define implementer
+#   td role define reviewer
+#   td role define tester
+#   td role define orchestrator
+#
+# Create an epic issue and start the flow:
+#   td create "Epic: <name>" --type epic --label epic --priority P1
+#   td start <issue-id>
+#
+# During `issue-breakdown`, create child execution issues like:
+#   td create "<work item title>" --type task --parent <epic-id> --label epic-work-item --priority P1
+#
+# Those child issues will automatically select the `epic_work_item_execution` flow.
+#
+# Activate Sidecar Agent-Driven Mode:
+#   Press H in the Sidecar harness tab, or use the command palette (? → Activate Harness)
+
+version: 1
+
+defaults:
+  # REQUIRED — agent type that runs the Orchestrator session in Sidecar
+  orchestrator_agent_type: claude
+  # Role notified when iteration or bounce limits are exhausted
+  escalation_role: architect
+  # Total stage transitions allowed before escalation
+  max_total_iterations: 60
+  # Maximum times a single stage can be entered before escalation
+  # Set high to allow multi-stage implementation loops (10 stages × 3 review bounces each)
+  max_stage_iterations: 30
+  # Maximum bounces on a single bounce edge before escalation
+  max_bounces_per_edge: 5
+  # How many times the same gate can fail before escalation fires
+  max_gate_failures_before_escalation: 3
+  # Require done/remaining/decision/uncertain in all handoffs
+  require_structured_handoff: true
+  # Artifact file existence is checked by file_exists gates below, not require_artifacts
+  require_artifacts: false
+  # Block advancement on gate failures (not just warn)
+  hard_gates: true
+  orchestrator_prompt: |
+    You are the Orchestrator for a harness-managed multi-agent workflow.
+    Execute exactly ONE dispatch cycle per guardian nudge, then stop.
+
+    Per-cycle protocol:
+    1. `td usage --new-session` — load your role prompt and inbox.
+    2. `td harness dispatchable --json` — list unowned actionable issues.
+    3. `td harness status --all --json` — get current_stage and current_actor_role per issue.
+    4. For each dispatchable issue:
+       a. Required role = current_actor_role from step 3.
+       b. Read ~/.cache/sidecar/status/sidecar-{projectSlug}-{role}.json
+       c. If status=Waiting: create handoff + nudge worker
+            td handoff <id> --to-role <role> \
+              --done "Dispatching to <role> for <stage>" \
+              --remaining "Complete <stage> work and advance harness" \
+              --decision "Role from harness current_actor_role" \
+              --uncertain "Monitor for ACK within 60s"
+            tmux send-keys -t sidecar-{projectSlug}-{role} "td usage --new-session" Enter
+       d. If status=Thinking/Active/Starting: skip this issue this cycle.
+       e. If no session for role exists: td role list → spawn session → end cycle.
+    5. Stale handoff check: if created_at > 60s with no owner change, re-nudge same session.
+    6. Escalation check: if escalated=true, route to architect role.
+    7. Done — end cycle.
+
+    Epic flow stage sequence and responsible roles:
+      epic-planning       → architect   (PRD + domain architecture)
+      architecture-review → critic      (challenges architecture; bounces back if rejected)
+      plan-creation       → architect   (staged implementation plan)
+      plan-review         → critic      (challenges plan; bounces back if rejected)
+      issue-breakdown     → architect   (create child `task` issues labeled `epic-work-item`)
+      execution-tracking  → architect   (monitor child issue completion; do NOT implement on the epic)
+      documentation       → architect   (align architecture, write guidelines, update repo docs)
+
+    Work-item flow stage sequence and responsible roles:
+      implementation → implementer (deliver the child work item)
+      impl-review    → reviewer    (bounce to implementation if rejected)
+      testing        → tester      (write/expand tests for the child work item)
+      test-review    → reviewer    (bounce to testing if test quality is insufficient)
+      done           → reviewer    (terminal)
+
+flows:
+  epic_development:
+    description: "PRD + architecture → plan → issue breakdown → execution tracking → documentation"
+    priority: 100
+    selection:
+      issue_types: [epic]
+      labels_any: [epic]
+
+    stages:
+      # ─── STAGE 1: Epic Planning ──────────────────────────────────────────────
+      # Architect selects the epic, writes the PRD, defines domain architecture.
+      # Output: {epic_name}_prd.md, {epic_name}_architecture.md, exec-plan (implementation stages).
+      - id: epic-planning
+        role: architect
+        next: [architecture-review]
+        checks_required:
+          - "decision_log_present"
+          - "exec_plan_present"
+          - "file_exists:docs/{epic_name}_prd.md"
+          - "file_exists:docs/{epic_name}_architecture.md"
+        artifacts_required:
+          - "docs/{epic_name}_prd.md"
+          - "docs/{epic_name}_architecture.md"
+
+      # ─── STAGE 2: Architecture Review ────────────────────────────────────────
+      # Critic challenges the architecture. Bounces back to epic-planning if rejected.
+      # Advances to plan-creation when approved.
+      - id: architecture-review
+        role: critic
+        next: [plan-creation]
+        bounce_back_to: epic-planning
+        max_bounces: 5
+        checks_required:
+          - "review_submitted"
+          - "reviewer_session_not_involved"
+
+      # ─── STAGE 3: Implementation Plan Creation ────────────────────────────────
+      # Architect writes the staged implementation plan.
+      # Each stage in the plan must be self-sufficient with trackable deliverables.
+      # Sets exec-plan steps for the implementation + test stages.
+      # Output: {epic_name}_implementation_plan.md, updated exec-plan.
+      - id: plan-creation
+        role: architect
+        next: [plan-review]
+        checks_required:
+          - "exec_plan_present"
+          - "decision_log_present"
+          - "file_exists:docs/{epic_name}_implementation_plan.md"
+        artifacts_required:
+          - "docs/{epic_name}_implementation_plan.md"
+
+      # ─── STAGE 4: Plan Review ─────────────────────────────────────────────────
+      # Critic evaluates plan completeness and stage self-sufficiency.
+      # Bounces back to plan-creation if stages defer decisions without justification.
+      - id: plan-review
+        role: critic
+        next: [issue-breakdown]
+        bounce_back_to: plan-creation
+        max_bounces: 5
+        checks_required:
+          - "review_submitted"
+          - "reviewer_session_not_involved"
+
+      # ─── STAGE 5: Issue Breakdown ─────────────────────────────────────────────
+      # Architect reflects the approved implementation plan into concrete TD issues.
+      # Expected actions: create child issues, establish order/dependencies, and update
+      # the plan doc so planned work maps cleanly to TD issue IDs.
+      # Create child execution issues as `--type task --label epic-work-item --parent <epic-id>`.
+      # Until TD adds a dedicated harness gate for issue materialization, this stage
+      # relies on the updated plan doc + decision log as the verification surface.
+      - id: issue-breakdown
+        role: architect
+        next: [execution-tracking]
+        checks_required:
+          - "decision_log_present"
+          - "exec_plan_present"
+          - "file_exists:docs/{epic_name}_implementation_plan.md"
+        artifacts_required:
+          - "docs/{epic_name}_implementation_plan.md"
+
+      # ─── STAGE 6: Execution Tracking ───────────────────────────────────────────
+      # The epic is no longer the execution unit.
+      # In this stage, the architect/orchestrator monitors the child `epic-work-item`
+      # issues created in `issue-breakdown`. Advance only after those child issues are
+      # complete and the epic-level status has been recorded.
+      - id: execution-tracking
+        role: architect
+        next: [documentation]
+        checks_required:
+          - "decision_log_present"
+          - "checkpoint_present"
+          - "file_exists:docs/{epic_name}_implementation_plan.md"
+
+      # ─── STAGE 7: Documentation (terminal) ───────────────────────────────────
+      # Architect aligns {epic_name}_architecture.md to actual implementation, writes {epic_name}_guidelines.md,
+      # and updates existing repo docs to reflect new changes.
+      # Completion of this stage marks the epic as done in the harness.
+      - id: documentation
+        role: architect
+        terminal: true
+        checks_required:
+          - "decision_log_present"
+          - "file_exists:docs/{epic_name}_guidelines.md"
+        artifacts_required:
+          - "docs/{epic_name}_guidelines.md"
+
+  epic_work_item_execution:
+    description: "Implementation → review → testing → test review for child epic work items"
+    priority: 90
+    selection:
+      issue_types: [task]
+      labels_any: [epic-work-item]
+
+    stages:
+      # ─── STAGE 1: Implementation ──────────────────────────────────────────────
+      # Implementer executes one child work item. Each child issue should be small,
+      # independently reviewable, and traceable back to the epic implementation plan.
+      - id: implementation
+        role: implementer
+        next: [impl-review]
+        checks_required:
+          - "code_changes_linked"
+          - "build_passed"
+
+      # ─── STAGE 2: Implementation Review ──────────────────────────────────────
+      # Reviewer validates correctness and quality. Rejecting this stage bounces the
+      # child issue back to implementation for fixes.
+      - id: impl-review
+        role: reviewer
+        next: [testing]
+        bounce_back_to: implementation
+        max_bounces: 10
+        checks_required:
+          - "review_submitted"
+          - "reviewer_session_not_involved"
+
+      # ─── STAGE 3: Testing ─────────────────────────────────────────────────────
+      # Tester writes or expands tests for the completed child work item.
+      - id: testing
+        role: tester
+        next: [test-review]
+        checks_required:
+          - "build_passed"
+          - "tests_passed"
+          - "code_changes_linked"
+
+      # ─── STAGE 4: Test Review ─────────────────────────────────────────────────
+      # Reviewer validates test sufficiency and quality. Rejecting this stage bounces
+      # the child issue back to testing.
+      - id: test-review
+        role: reviewer
+        next: [done]
+        bounce_back_to: testing
+        max_bounces: 10
+        checks_required:
+          - "review_submitted"
+          - "reviewer_session_not_involved"
+
+      # ─── STAGE 5: Done (terminal) ─────────────────────────────────────────────
+      # Terminal stage for an executed child work item.
+      - id: done
+        role: reviewer
+        terminal: true

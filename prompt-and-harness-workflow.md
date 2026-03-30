@@ -36,7 +36,7 @@ Per-epic loop (harness-managed per TD issue):
 
 | File | Status | Description |
 |------|--------|-------------|
-| `harness.flows.example.yaml` | ✅ Created | Full harness flow definition |
+| `flows/epic-development.yaml` | ✅ Created | Full harness flow definition |
 | `critic/v1.md` | ✅ Created | Critic role behavioral prompt |
 | `orchestrator/v1.md` | ✅ Created | Orchestrator role behavioral prompt |
 | `manifest.yaml` | ✅ Updated | Added `critic` and `orchestrator` roles |
@@ -52,16 +52,16 @@ for this workflow.
 ### Deliverables
 
 **1.1** Verify `architect/v2.md` covers epic-planning responsibilities:
-- PRD authorship (`docs/epics/{issue_id}/prd.md`)
-- Domain architecture design (`docs/epics/{issue_id}/architecture.md`)
-- Implementation plan creation (`docs/epics/{issue_id}/implement-plan.md`)
+- PRD authorship (`docs/{epic_name}_prd.md`)
+- Domain architecture design (`docs/{epic_name}_architecture.md`)
+- Implementation plan creation (`docs/{epic_name}_implementation_plan.md`)
 - Documentation stage: align architecture.md to actual implementation, write guidelines.md,
   update existing repo docs
 - Harness-aware workflow: `td usage --new-session` → `td start` → `td context` →
   produce artifacts → `td harness advance --to <next>`
 
 **1.2** Verify `implementer/v1.md` covers stage-by-stage implementation:
-- Read `docs/epics/{issue_id}/implement-plan.md` at session start
+- Read `docs/{epic_name}_implementation_plan.md` at session start
 - Read exec-plan to find the current incomplete stage
 - Implement only the current stage — do not skip ahead
 - Mark stage complete in exec-plan before handoff
@@ -111,9 +111,9 @@ Add a **Documentation Stage** section describing the `documentation` harness sta
 
 When in the `documentation` harness stage:
 1. `td context <issue-id>` — review full implementation history
-2. Read `docs/epics/{issue_id}/architecture.md` — compare to actual implementation
+2. Read `docs/{epic_name}_architecture.md` — compare to actual implementation
 3. Update architecture.md to reflect what was actually built (not target design)
-4. Write `docs/epics/{issue_id}/guidelines.md`:
+4. Write `docs/{epic_name}_guidelines.md`:
    - Key design decisions made during implementation
    - Patterns introduced and when to use them
    - Known limitations and future work
@@ -156,7 +156,7 @@ After reviewing a stage:
 
 ---
 
-## Stage 3 — Validate harness.flows.example.yaml
+## Stage 3 — Validate flows/epic-development.yaml
 
 **Goal:** Confirm the flow file is syntactically correct and semantically sound.
 
@@ -164,7 +164,7 @@ After reviewing a stage:
 
 **3.1** Validate YAML syntax:
 ```bash
-python3 -c "import yaml; yaml.safe_load(open('harness.flows.example.yaml'))" && echo OK
+python3 -c "import yaml; yaml.safe_load(open('flows/epic-development.yaml'))" && echo OK
 ```
 
 **3.2** Check against harness spec rules:
@@ -181,7 +181,7 @@ python3 -c "import yaml; yaml.safe_load(open('harness.flows.example.yaml'))" && 
   - `decision_log_present`, `exec_plan_present`, `code_changes_linked`
   - `build_passed`, `tests_passed`, `review_submitted`
   - `reviewer_session_not_involved`, `file_exists:<path>`
-- [ ] `{issue_id}` template variable is used correctly in artifact paths
+- [ ] `{epic_name}` placeholder is used consistently in flat artifact paths under `docs/`
 - [ ] `max_bounces` on `impl-review` and `test-review` is large enough for
   multi-stage loops (currently 15 — supports up to 5 stages × 3 iterations each)
 
@@ -233,7 +233,7 @@ python3 -c "import yaml; yaml.safe_load(open('harness.flows.example.yaml'))" && 
   # orchestrator agent type is set in harness.flows.yaml defaults
 
 ## 4. Copy the harness flow definition
-  cp .../td-role-templates/harness.flows.example.yaml .todos/harness.flows.yaml
+  cp .../td-role-templates/flows/epic-development.yaml .todos/harness.flows.yaml
   # Edit as needed (change agent types, adjust iteration limits, add your own flows)
 
 ## 5. Create pre-conditions
@@ -255,11 +255,11 @@ python3 -c "import yaml; yaml.safe_load(open('harness.flows.example.yaml'))" && 
 ```markdown
 ## Artifact Paths
 
-The flow uses {issue_id} template variables:
-  docs/epics/<issue_id>/prd.md           # Epic PRD
-  docs/epics/<issue_id>/architecture.md  # Domain architecture
-  docs/epics/<issue_id>/implement-plan.md # Staged implementation plan
-  docs/epics/<issue_id>/guidelines.md    # Post-implementation guidelines
+The flow uses flat, epic-specific filenames based on the epic name:
+  docs/<epic_name>_prd.md                  # Epic PRD
+  docs/<epic_name>_architecture.md         # Domain architecture
+  docs/<epic_name>_implementation_plan.md  # Staged implementation plan
+  docs/<epic_name>_guidelines.md           # Post-implementation guidelines
 
 Agents create these files during their harness stages. The harness gates check
 file_exists before allowing stage advancement.
@@ -305,7 +305,7 @@ done
 **5.3** Update `README.md` — add entries for `critic` and `orchestrator` in the
 Repository Structure section.
 
-**5.4** Update `README.md` — add reference to `harness.flows.example.yaml` in the
+**5.4** Update `README.md` — add reference to `flows/epic-development.yaml` in the
 Repository Structure section.
 
 ### Acceptance Criteria
@@ -322,7 +322,7 @@ Repository Structure section.
 The workflow is fully implemented when:
 
 - [ ] All 6 role prompt files exist and are under 4 KB
-- [ ] `harness.flows.example.yaml` passes all validation checks in Stage 3
+- [ ] `flows/epic-development.yaml` passes all validation checks in Stage 3
 - [ ] `manifest.yaml` lists all 6 roles with correct file paths
 - [ ] `WORKFLOW-SETUP.md` guides teams through end-to-end setup
 - [ ] A test epic issue can be created, enrolled in the flow, and dispatched by
@@ -375,6 +375,6 @@ reviewing its own planning outputs.
 
 The Orchestrator is not a harness stage role — it is a Sidecar-level coordination agent.
 Its role prompt (`orchestrator/v1.md`) is served from this registry via `td role define orchestrator`
-but its behavioral identity is set by the `orchestrator_prompt` field in `harness.flows.yaml`
-at a per-flow level. Both are used: the role prompt sets persistent identity, the flow prompt
-sets per-flow coordination instructions.
+but its behavioral identity is set by the `defaults.orchestrator_prompt` field in `harness.flows.yaml`
+at a harness-defaults level. Both are used: the role prompt sets persistent identity, the defaults prompt
+sets coordination instructions shared across flows.

@@ -1,0 +1,68 @@
+# solo-implement — Single implementer, no review
+#
+# Minimal flow for quick tasks, spikes, or solo work where review
+# is not needed. The implementer completes the work and marks it done.
+#
+# Stages:
+#   1. implement — implementer writes code, links changes, passes build
+#   2. done      — terminal
+#
+# Prerequisites:
+#   td role assign claude implementer
+#   td role define implementer
+#   td role define orchestrator
+
+version: 1
+
+defaults:
+  orchestrator_agent_type: claude
+  escalation_role: architect
+  max_total_iterations: 3
+  max_stage_iterations: 2
+  max_bounces_per_edge: 1
+  max_gate_failures_before_escalation: 2
+  require_structured_handoff: true
+  require_artifacts: false
+  hard_gates: false
+  orchestrator_prompt: |
+    You are the Orchestrator for a harness-managed multi-agent workflow.
+    Execute exactly ONE dispatch cycle per guardian nudge, then stop.
+
+    Per-cycle protocol:
+    1. `td usage --new-session` — load your role prompt and inbox.
+    2. `td harness dispatchable --json` — list unowned actionable issues.
+    3. `td harness status --all --json` — get current_stage and current_actor_role per issue.
+    4. For each dispatchable issue:
+       a. Required role = current_actor_role from step 3.
+       b. Read ~/.cache/sidecar/status/sidecar-{projectSlug}-{role}.json
+       c. If status=Waiting: create handoff + nudge worker
+            td handoff <id> --to-role <role> \
+              --done "Dispatching to <role> for <stage>" \
+              --remaining "Complete <stage> work and advance harness" \
+              --decision "Role from harness current_actor_role" \
+              --uncertain "Monitor for ACK within 60s"
+            tmux send-keys -t sidecar-{projectSlug}-{role} "td usage --new-session" Enter
+       d. If status=Thinking/Active/Starting: skip this issue this cycle.
+       e. If no session for role exists: spawn session, end cycle.
+    5. Stale handoff check: if created_at > 60s with no owner change, re-nudge.
+    6. Escalation check: if escalated=true, route to escalation_role.
+    7. Done — end cycle.
+
+flows:
+  solo_implement:
+    description: "Single implementer, no review"
+    priority: 100
+    selection:
+      issue_types: [feature, bug, task]
+
+    stages:
+      - id: implement
+        role: implementer
+        next: [done]
+        checks_required:
+          - code_changes_linked
+          - build_passed
+
+      - id: done
+        role: implementer
+        terminal: true

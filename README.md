@@ -22,7 +22,12 @@ Fetched templates are saved to `.todos/roles/<role>.md` in your project. Once sa
 ## Repository Structure
 
 ```
-manifest.yaml          # Registry catalog — roles, versions, descriptions
+manifest.yaml          # Registry catalog — roles, versions, flow templates
+flows/                 # Flow templates fetched by td harness init
+  implement-and-review.yaml   # Two-stage: implement then review (default)
+  implement-review-test.yaml  # Three-stage: implement, review, test
+  solo-implement.yaml         # Single implementer, no review
+  epic-development.yaml       # Epic development workflow
 architect/
   v1.md                # Initial architect prompt
   v2.md                # Stronger constraints, handoff-aware
@@ -52,6 +57,11 @@ roles:
 - `schema` must be `1` (validated by td before parsing)
 - `latest` points to the recommended version
 - Each version has a `summary` for display in `td role templates`
+
+### `manifest.yaml` and `flows/`
+
+- `manifest.yaml` is the **template registry index** for this repository. It tells `td` which role prompts and flow templates exist.
+- `flows/` contains **flow templates** fetched by `td harness init`. Each template is a starting-point `harness.flows.yaml` config for different project types. Use `td harness templates` to list them.
 
 ## Adding a New Role
 
