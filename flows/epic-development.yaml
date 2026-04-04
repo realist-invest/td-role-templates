@@ -59,7 +59,7 @@ defaults:
   max_gate_failures_before_escalation: 3
   # Require done/remaining/decision/uncertain in all handoffs
   require_structured_handoff: true
-  # Artifact file existence is checked by file_exists gates below, not require_artifacts
+  # Artifact presence is checked by links_present gates, not require_artifacts
   require_artifacts: false
   # Block advancement on gate failures (not just warn)
   hard_gates: true
@@ -114,18 +114,14 @@ flows:
     stages:
       # ─── STAGE 1: Epic Planning ──────────────────────────────────────────────
       # Architect selects the epic, writes the PRD, defines domain architecture.
-      # Output: {epic_name}_prd.md, {epic_name}_architecture.md, exec-plan (implementation stages).
+      # Artifacts: link PRD and architecture docs via `td link`.
       - id: epic-planning
         role: architect
         next: [architecture-review]
         checks_required:
           - "decision_log_present"
           - "exec_plan_present"
-          - "file_exists:docs/{epic_name}_prd.md"
-          - "file_exists:docs/{epic_name}_architecture.md"
-        artifacts_required:
-          - "docs/{epic_name}_prd.md"
-          - "docs/{epic_name}_architecture.md"
+          - "links_present"
 
       # ─── STAGE 2: Architecture Review ────────────────────────────────────────
       # Critic challenges the architecture. Bounces back to epic-planning if rejected.
@@ -142,17 +138,14 @@ flows:
       # ─── STAGE 3: Implementation Plan Creation ────────────────────────────────
       # Architect writes the staged implementation plan.
       # Each stage in the plan must be self-sufficient with trackable deliverables.
-      # Sets exec-plan steps for the implementation + test stages.
-      # Output: {epic_name}_implementation_plan.md, updated exec-plan.
+      # Artifacts: link implementation plan docs via `td link`.
       - id: plan-creation
         role: architect
         next: [plan-review]
         checks_required:
           - "exec_plan_present"
           - "decision_log_present"
-          - "file_exists:docs/{epic_name}_implementation_plan.md"
-        artifacts_required:
-          - "docs/{epic_name}_implementation_plan.md"
+          - "links_present"
 
       # ─── STAGE 4: Plan Review ─────────────────────────────────────────────────
       # Critic evaluates plan completeness and stage self-sufficiency.
@@ -171,43 +164,39 @@ flows:
       # Expected actions: create child issues, establish order/dependencies, and update
       # the plan doc so planned work maps cleanly to TD issue IDs.
       # Create child execution issues as `--type task --label epic-work-item --parent <epic-id>`.
-      # Until TD adds a dedicated harness gate for issue materialization, this stage
-      # relies on the updated plan doc + decision log as the verification surface.
+      # Artifacts: link updated plan docs via `td link`.
       - id: issue-breakdown
         role: architect
         next: [execution-tracking]
         checks_required:
           - "decision_log_present"
           - "exec_plan_present"
-          - "file_exists:docs/{epic_name}_implementation_plan.md"
-        artifacts_required:
-          - "docs/{epic_name}_implementation_plan.md"
+          - "links_present"
 
       # ─── STAGE 6: Execution Tracking ───────────────────────────────────────────
       # The epic is no longer the execution unit.
       # In this stage, the architect/orchestrator monitors the child `epic-work-item`
       # issues created in `issue-breakdown`. Advance only after those child issues are
       # complete and the epic-level status has been recorded.
+      # No links_present — this stage monitors child issues, may not produce new artifacts.
       - id: execution-tracking
         role: architect
         next: [documentation]
         checks_required:
           - "decision_log_present"
           - "checkpoint_present"
-          - "file_exists:docs/{epic_name}_implementation_plan.md"
 
       # ─── STAGE 7: Documentation (terminal) ───────────────────────────────────
-      # Architect aligns {epic_name}_architecture.md to actual implementation, writes {epic_name}_guidelines.md,
+      # Architect aligns architecture docs to actual implementation, writes guidelines,
       # and updates existing repo docs to reflect new changes.
+      # Artifacts: link final documentation via `td link`.
       # Completion of this stage marks the epic as done in the harness.
       - id: documentation
         role: architect
         terminal: true
         checks_required:
           - "decision_log_present"
-          - "file_exists:docs/{epic_name}_guidelines.md"
-        artifacts_required:
-          - "docs/{epic_name}_guidelines.md"
+          - "links_present"
 
   epic_work_item_execution:
     description: "Implementation → review → testing → test review for child epic work items"
