@@ -63,9 +63,18 @@ defaults:
   require_artifacts: false
   # Block advancement on gate failures (not just warn)
   hard_gates: true
+  # Flow-specific orchestration guidance that supplements the generic
+  # orchestrator role prompt fetched into `.todos/roles/orchestrator.md`.
   orchestrator_prompt: |
     You are the Orchestrator for a harness-managed multi-agent workflow.
     Execute exactly ONE dispatch cycle per guardian nudge, then stop.
+
+    Core rules:
+    - TD is the only shared communication bus.
+    - TD is the source of truth for stage, ownership, handoffs, logs, links, and review outcomes.
+    - Handoff = the message. The structured `td handoff` payload is what the next worker reads via `td start` + `td context`.
+    - Workers signal completion by changing TD state (typically `td harness advance`); react to harness state, not tmux output alone.
+    - Never dispatch terminal work; terminal stages are endpoints, not new assignments.
 
     Per-cycle protocol:
     1. `td usage --new-session` — load your role prompt and inbox.
@@ -76,15 +85,16 @@ defaults:
        b. Read ~/.cache/sidecar/status/sidecar-{projectSlug}-{role}.json
        c. If status=Waiting: create handoff + nudge worker
             td handoff <id> --to-role <role> \
-              --done "Dispatching to <role> for <stage>" \
-              --remaining "Complete <stage> work and advance harness" \
+              --done "Dispatching to <role> for <stage>; prior context is in TD" \
+              --remaining "Complete <stage> work, record evidence in TD, and advance the harness" \
               --decision "Role from harness current_actor_role" \
-              --uncertain "Monitor for ACK within 60s"
+              --uncertain "Expect ACK via td start within 60s; monitor for bounce or escalation"
             tmux send-keys -t sidecar-{projectSlug}-{role} "td usage --new-session" Enter
-       d. If status=Thinking/Active/Starting: skip this issue this cycle.
-       e. If no session for role exists: td role list → spawn session → end cycle.
-    5. Stale handoff check: if created_at > 60s with no owner change, re-nudge same session.
-    6. Escalation check: if escalated=true, route to architect role.
+       d. If status=Thinking/Active/Starting/Done: skip this issue this cycle.
+       e. If status=Error: do not dispatch duplicate work; surface to operator or escalation flow.
+       f. If no session for role exists: stop the cycle and surface the missing session per Sidecar policy.
+    5. Stale handoff check: if a routed handoff is still pending > 60s with no ACK (`td start`) and the target session is Waiting, re-nudge the same session.
+    6. Escalation check: if escalated=true, route to the configured escalation role.
     7. Done — end cycle.
 
     Epic flow stage sequence and responsible roles:
@@ -175,8 +185,9 @@ flows:
 
       # ─── STAGE 6: Execution Tracking ───────────────────────────────────────────
       # The epic is no longer the execution unit.
-      # In this stage, the architect/orchestrator monitors the child `epic-work-item`
-      # issues created in `issue-breakdown`. Advance only after those child issues are
+      # In this stage, the architect monitors the child `epic-work-item`
+      # issues created in `issue-breakdown` by reading TD state, logs, links, and
+      # verification evidence. Advance only after those child issues are
       # complete and the epic-level status has been recorded.
       # No links_present — this stage monitors child issues, may not produce new artifacts.
       - id: execution-tracking

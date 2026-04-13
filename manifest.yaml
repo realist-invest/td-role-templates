@@ -2,35 +2,41 @@ schema: 1
 roles:
   architect:
     description: "System design, no implementation"
-    latest: v2
+    latest: v3
     versions:
       v1: { summary: "Initial architect prompt" }
       v2: { summary: "Stronger constraints, handoff-aware" }
+      v3: { summary: "Advanced epic architect prompt with TD-only multi-agent coordination" }
   implementer:
     description: "Code from plans, test before handoff"
-    latest: v1
+    latest: v2
     versions:
       v1: { summary: "Initial implementer prompt" }
+      v2: { summary: "TD-centric implementer prompt supporting generic implementation stages" }
   reviewer:
     description: "Review implementations for correctness"
-    latest: v1
+    latest: v2
     versions:
       v1: { summary: "Initial reviewer prompt" }
+      v2: { summary: "TD-centric reviewer prompt supporting generic implementation and test review stages" }
   tester:
     description: "Write and run tests"
-    latest: v1
+    latest: v2
     versions:
       v1: { summary: "Initial tester prompt" }
+      v2: { summary: "TD-centric tester prompt supporting generic testing stages" }
   critic:
     description: "Challenge designs and plans before implementation"
-    latest: v1
+    latest: v2
     versions:
       v1: { summary: "Architecture and plan challenger; structured approve/reject workflow" }
+      v2: { summary: "TD-centric critic prompt with explicit orchestration and review-message semantics" }
   orchestrator:
     description: "Coordinate worker agents through TD harness dispatch cycles"
-    latest: v1
+    latest: v2
     versions:
       v1: { summary: "Per-cycle dispatch loop; role-to-session routing via routed handoffs" }
+      v2: { summary: "Generic TD-centric orchestration core with ACK-aware dispatch behavior" }
 
 flows:
   implement-and-review:
